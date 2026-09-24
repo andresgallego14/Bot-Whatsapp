@@ -2,6 +2,7 @@ import os
 import requests
 from flask import Flask, request, jsonify
 from pypdf import PdfReader
+import re 
 
 app = Flask(__name__)
 
@@ -87,9 +88,24 @@ def descargar_y_procesar_pdf(media_id, file_name, from_number):
                 f.write(file_response.content)
             
             print(f"PDF descargado exitosamente en: {local_path}")
-            enviar_respuesta(from_number, f"He recibido y descargado tu PDF '{file_name}' correctamente. Próximamente extraeré la placa y validaré el sistema.")
+            enviar_respuesta(from_number, f"He recibido tu PDF '{file_name}'. Procesando la remesa...")
             
-            # TODO: Aquí agregaremos la lógica para leer el PDF con pypdf y buscar la placa
+            # 3. Leer texto y extraer datos clave
+            texto_pdf = extraer_texto_pdf(local_path)
+            if texto_pdf:
+                info = extraer_datos_remesa(texto_pdf)
+                
+                mensaje_respuesta = (
+                    f"📋 *Remesa procesada con éxito*\n\n"
+                    f"🚗 *Placa:* {info['vehiculo']}\n"
+                    f"👤 *Conductor:* {info['conductor']}\n"
+                    f"📍 *Origen:* {info['origen']}\n"
+                    f"🏁 *Destino:* {info['destino']}\n"
+                    f"🏢 *Destinatario:* {info['destinatario']}"
+                )
+                enviar_respuesta(from_number, mensaje_respuesta)
+            else:
+                enviar_respuesta(from_number, "No pude extraer el texto del PDF.")
         else:
             print("Error al descargar el contenido binario del archivo.")
             enviar_respuesta(from_number, "Ocurrió un error al descargar tu archivo PDF.")
@@ -124,6 +140,24 @@ def extraer_texto_pdf(ruta_archivo):
     except Exception as e:
         print(f"Error leyendo el PDF: {e}")
         return None
+
+def extraer_datos_remesa(texto):
+    datos = {}
+    
+    # Expresiones regulares para buscar los campos clave en el texto del PDF
+    match_vehiculo = re.search(r"Vehículo:\s*([A-Z0-9]+)", texto)
+    match_conductor = re.search(r"Conductor:\s*([0-9]+\s+[A-Z\s]+)", texto)
+    match_origen = re.search(r"Origen:\s*([A-ZÁÉÍÓÚÑ\s]+)", texto)
+    match_destino = re.search(r"Destino:\s*([A-ZÁÉÍÓÚÑ\s]+)", texto)
+    match_destinatario = re.search(r"Destinatario:\s*([A-ZÁÉÍÓÚÑ\s]+)", texto)
+    
+    datos['vehiculo'] = match_vehiculo.group(1).strip() if match_vehiculo else "No encontrado"
+    datos['conductor'] = match_conductor.group(1).strip() if match_conductor else "No encontrado"
+    datos['origen'] = match_origen.group(1).strip() if match_origen else "No encontrado"
+    datos['destino'] = match_destino.group(1).strip() if match_destino else "No encontrado"
+    datos['destinatario'] = match_destinatario.group(1).strip() if match_destinatario else "No encontrado"
+    
+    return datos
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 10000))
