@@ -134,118 +134,70 @@ def extraer_texto_pdf(ruta_archivo):
 def extraer_datos_remesa(texto):
     datos = {}
 
-    # 1. PLACA: Búsqueda estricta de 3 letras + 3 dígitos (ej. KUF879 o KUF-879)
+    # 1. PLACA: Busca la combinación de 3 letras y 3 números ANTES de "Vehículo:"
     match_placa = re.search(
-        r"\b([A-Z]{3}\s*[-]?\s*\d{3}|[A-Z]{3}\s*[-]?\s*\d{2}[A-Z0-9])\b", texto
+        r"([A-Z]{3}\s*[-]?\s*\d{3}|[A-Z]{3}\s*[-]?\s*\d{2}[A-Z0-9])(?=\s*Veh[íi]culo:)",
+        texto,
+        re.IGNORECASE,
     )
-    if match_placa:
-        datos["vehiculo"] = (
-            match_placa.group(0).upper().replace(" ", "").replace("-", "")
+    if not match_placa:
+        match_placa = re.search(
+            r"\b([A-Z]{3}\d{3}|[A-Z]{3}\d{2}[A-Z0-9])\b", texto
         )
+
+    # 2. CONDUCTOR: Extrae el nombre ANTES de "Conductor:" (omite la cédula)
+    match_conductor = re.search(
+        r"(?:\d[\d\.\s]*)?([A-ZÁÉÍÓÚÑa-z\s]{4,40})(?=\s*Conductor:)", texto
+    )
+
+    # 3. ORIGEN: Captura la ciudad ubicada justo encima de "Destinatario:"
+    match_origen = re.search(
+        r"([A-ZÁÉÍÓÚÑ]{3,25})\s*[\r\n]+\s*Destinatario:", texto
+    )
+
+    # 4. DESTINO: Captura el texto después de "Destino:"
+    match_destino = re.search(
+        r"Destino:\s*([A-ZÁÉÍÓÚÑa-z\s]{3,25})", texto, re.IGNORECASE
+    )
+
+    # 5. DESTINATARIO: Extrae la empresa receptora ignorando la empresa emisora (MASTERCARGA)
+    matches_destinatario = re.findall(
+        r"(?:[A-Z0-9]{8,15}\s+)?([A-Z0-9ÁÉÍÓÚÑ\s\.\-&]{3,50}(?:S\.A\.S|SAS|S\.A\.|LTDA))",
+        texto,
+        re.IGNORECASE,
+    )
+
+    destinatario_final = "NO ENCONTRADO"
+    for m in matches_destinatario:
+        m_limpio = re.sub(r"^[A-Z0-9]{8,15}\s+", "", m).strip().upper()
+        if "MASTERCARGA" not in m_limpio:
+            destinatario_final = m_limpio
+            break
+
+    # Asignación de resultados
+    datos["vehiculo"] = (
+        match_placa.group(1).upper().replace(" ", "").replace("-", "")
+        if match_placa
+        else "NO ENCONTRADO"
+    )
+
+    if match_conductor:
+        nombre_cond = re.sub(r"\s+", " ", match_conductor.group(1)).strip()
+        datos["conductor"] = nombre_cond if nombre_cond else "NO ENCONTRADO"
     else:
-        match_v = re.search(
-            r"(?:Veh[íi]culo|Placa)[\s:]*([A-Za-z0-9\s-]+)",
-            texto,
-            re.IGNORECASE,
-        )
-        if match_v:
-            val = match_v.group(1).split()[0].strip().upper()
-            datos["vehiculo"] = val if len(val) >= 5 else "NO ENCONTRADO"
-        else:
-            datos["vehiculo"] = "NO ENCONTRADO"
+        datos["conductor"] = "NO ENCONTRADO"
 
-    # Función extractora con soporte para saltos de línea y corte por casilla vecina
-    def capturar_valor(clave, palabras_fin):
-        # Primero busca en la misma línea
-        pattern = rf"{clave}[\s:]+([^\n\r]+)"
-        match = re.search(pattern, texto, re.IGNORECASE)
-
-        # Si no encuentra nada en la misma línea, busca en la línea siguiente
-        if not match:
-            pattern_multiline = rf"{clave}[\s:]*[\r\n]+\s*([^\n\r]+)"
-            match = re.search(pattern_multiline, texto, re.IGNORECASE)
-            if not match:
-                return "NO ENCONTRADO"
-
-        valor = match.group(1).strip()
-
-        # Corta el texto si se topa con la etiqueta de la casilla de al lado
-        for fin in palabras_fin:
-            pos = re.search(rf"\b{fin}\b", valor, re.IGNORECASE)
-            if pos:
-                valor = valor[: pos.start()].strip()
-
-        valor = re.sub(r"[\:\,\.\-]+\s*$", "", valor).strip()
-        return valor if len(valor) >= 2 else "NO ENCONTRADO"
-
-    # 2. CONDUCTOR (elimina cédula si aparece antes del nombre)
-    conductor_raw = capturar_valor(
-        "Conductor",
-        [
-            "C.C",
-            "CC",
-            "Teléfono",
-            "Telefono",
-            "Tel",
-            "Placa",
-            "Vehículo",
-            "Vehiculo",
-            "CANTIDAD",
-            "Marca",
-            "Serial",
-            "Origen",
-        ],
+    datos["origen"] = (
+        match_origen.group(1).strip().upper() if match_origen else "NO ENCONTRADO"
     )
-    conductor_raw = re.sub(r"^\d+[\s\.-]*", "", conductor_raw).strip()
-    datos["conductor"] = conductor_raw if conductor_raw else "NO ENCONTRADO"
-
-    # 3. ORIGEN
-    datos["origen"] = capturar_valor(
-        "Origen",
-        [
-            "Coordenadas",
-            "Latitud",
-            "Longitud",
-            "Destino",
-            "Teléfono",
-            "Telefono",
-            "Dirección",
-            "Direccion",
-            "Remitente",
-        ],
+    datos["destino"] = (
+        match_destino.group(1).split("\n")[0].strip().upper()
+        if match_destino
+        else "NO ENCONTRADO"
     )
-
-    # 4. DESTINO
-    datos["destino"] = capturar_valor(
-        "Destino",
-        [
-            "Destinatario",
-            "Observaciones",
-            "Dirección",
-            "Direccion",
-            "Manifiesto",
-            "Pedido",
-            "Fecha",
-        ],
-    )
-
-    # 5. DESTINATARIO
-    datos["destinatario"] = capturar_valor(
-        "Destinatario",
-        [
-            "Dirección",
-            "Direccion",
-            "Teléfono",
-            "Telefono",
-            "Destino",
-            "Ciudad",
-            "NIT",
-            "Cc",
-        ],
-    )
+    datos["destinatario"] = destinatario_final
 
     return datos
-
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
