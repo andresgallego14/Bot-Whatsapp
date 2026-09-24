@@ -1,5 +1,7 @@
 import pdfplumber
 import re
+from pypdf import PdfReader
+
 
 def extraer_datos_remesa(ruta_pdf):
     with pdfplumber.open(ruta_pdf) as pdf:
@@ -30,3 +32,12 @@ if __name__ == "__main__":
     for clave, valor in resultado.items():
         print(f"• {clave.capitalize()}: {valor}")
     print("--------------------------------------\n")
+
+lector = PdfReader("REMESA.pdf")  # Asegúrate de poner la ruta a una remesa local
+texto = ""
+for pagina in lector.pages:
+    texto += pagina.extract_text()
+
+print("--- INICIO DEL TEXTO EXTRAÍDO ---")
+print(texto)
+print("--- FIN DEL TEXTO EXTRAÍDO ---")
