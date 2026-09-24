@@ -6,7 +6,6 @@ import re
 
 app = Flask(__name__)
 
-# Tus credenciales configuradas
 VERIFY_TOKEN = "satrack_bot_token_2026"
 PHONE_NUMBER_ID = "1276025325598759"
 WHATSAPP_TOKEN = "EAATgAPck5N4BSl0k2gBZCQHIDsK3cvtZAZB1s5CnEt6k56My4KkpzCZAh2yxZC2ZAi5Jh95CJdPL24cG0KjUb9vgVKU6T0w6pZCtV3sXsXIGf5qfgd6Q709qNPV3IcZA2dlL2KP8h4ZCcFcZAG6eyfyMLztsNkVQAQwpZCarvvWcPvildFwn3OCM9R1PL1RY4FbppT6thKJZAoVYeBvn1Lrsi2nHeccqHP94EaY8jPIHWpUoyAOCzqEUtxaEy20eExeH26ZBz2YR67VIkFWkHhbEYsHBWdmGd"
@@ -18,7 +17,6 @@ def home():
 @app.route('/webhook', methods=['GET', 'POST'])
 def webhook():
     if request.method == 'GET':
-        # Validación del Webhook por parte de Meta
         mode = request.args.get('hub.mode')
         token = request.args.get('hub.verify_token')
         challenge = request.args.get('hub.challenge')
@@ -30,7 +28,6 @@ def webhook():
             return "Token de verificación inválido", 403
 
     elif request.method == 'POST':
-        # Recepción de mensajes entrantes
         data = request.get_json()
         print("Mensaje recibido:", data)
 
@@ -44,13 +41,11 @@ def webhook():
                 from_number = message['from']
                 msg_type = message['type']
                 
-                # CASO 1: El usuario envió un mensaje de texto
                 if msg_type == 'text':
                     msg_body = message['text']['body']
                     print(f"Texto de {from_number}: {msg_body}")
                     enviar_respuesta(from_number, f"¡Hola! Recibí tu texto: '{msg_body}'.")
 
-                # CASO 2: El usuario envió un documento (PDF, etc.)
                 elif msg_type == 'document':
                     doc = message['document']
                     media_id = doc['id']
@@ -60,7 +55,6 @@ def webhook():
                     print(f"Documento recibido de {from_number}: {file_name} (Tipo: {mime_type})")
 
                     if 'pdf' in mime_type:
-                        # Descargar y procesar el PDF
                         descargar_y_procesar_pdf(media_id, file_name, from_number)
                     else:
                         enviar_respuesta(from_number, "Recibí el archivo, pero por ahora solo proceso documentos PDF.")
@@ -73,14 +67,12 @@ def webhook():
 def descargar_y_procesar_pdf(media_id, file_name, from_number):
     headers = {"Authorization": f"Bearer {WHATSAPP_TOKEN}"}
     
-    # 1. Obtener la URL de descarga del archivo desde la API de Meta
     url_meta = f"https://graph.facebook.com/v20.0/{media_id}"
     response = requests.get(url_meta, headers=headers)
     
     if response.status_code == 200:
         file_url = response.json().get("url")
         
-        # 2. Descargar el archivo binario del PDF
         file_response = requests.get(file_url, headers=headers)
         if file_response.status_code == 200:
             local_path = f"/tmp/{file_name}"
@@ -90,7 +82,6 @@ def descargar_y_procesar_pdf(media_id, file_name, from_number):
             print(f"PDF descargado exitosamente en: {local_path}")
             enviar_respuesta(from_number, f"He recibido tu PDF '{file_name}'. Procesando la remesa...")
             
-            # 3. Leer texto y extraer datos clave
             texto_pdf = extraer_texto_pdf(local_path)
             if texto_pdf:
                 info = extraer_datos_remesa(texto_pdf)
@@ -144,7 +135,6 @@ def extraer_texto_pdf(ruta_archivo):
 def extraer_datos_remesa(texto):
     datos = {}
     
-    # Expresiones regulares para buscar los campos clave en el texto del PDF
     match_vehiculo = re.search(r"Vehículo:\s*([A-Z0-9]+)", texto)
     match_conductor = re.search(r"Conductor:\s*([0-9]+\s+[A-Z\s]+)", texto)
     match_origen = re.search(r"Origen:\s*([A-ZÁÉÍÓÚÑ\s]+)", texto)
