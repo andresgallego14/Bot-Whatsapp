@@ -135,61 +135,55 @@ def extraer_texto_pdf(ruta_archivo):
 def extraer_datos_remesa(texto):
     datos = {}
 
-    # Normalización del texto para evitar saltos de línea molestos
-    texto_limpio = " ".join(texto.split())
+    # Imprime en los logs de Render para depurar si algo falla
+    print("--- TEXTO BRUTO DEL PDF ---")
+    print(texto)
+    print("---------------------------")
 
-    # 1. PLACA: Busca específicamente el patrón de placa colombiana (ej. AAA123 o AAA12A)
+    # Búsquedas permisivas
     match_placa = re.search(
-        r"(?:Vehículo|Placa)[\s:]*([A-Z]{3}\d{2}[A-Z0-9])",
-        texto,
-        re.IGNORECASE,
+        r"(?:Veh[íi]culo|Placa)[\s:]*([A-Za-z0-9-]{6,7})", texto, re.IGNORECASE
     )
     if not match_placa:
         match_placa = re.search(
-            r"\b([A-Z]{3}\d{3}|[A-Z]{3}\d{2}[A-Z0-9])\b", texto
+            r"\b([A-Za-z]{3}\s*-?\d{3}|[A-Za-z]{3}\s*-?\d{2}[A-Za-z0-9])\b",
+            texto,
         )
 
-    # 2. CONDUCTOR: Filtra números iniciales (cédula) y extrae el nombre completo
     match_conductor = re.search(
-        r"Conductor:\s*(?:\d*\s*)?([A-ZÁÉÍÓÚÑ\s]{4,35})(?=\s*C\.?C|\s*Tel|\s*Placa|\s*CANTIDAD|\s*Vehículo|$)",
+        r"Conductor[\s:]*(?:\d+)?\s*([A-ZÁÉÍÓÚÑa-z\s]{4,35})",
         texto,
+        re.IGNORECASE,
     )
-
-    # 3. ORIGEN: Captura nombres de ciudades completos (mínimo 3 caracteres)
     match_origen = re.search(
-        r"Origen:\s*([A-ZÁÉÍÓÚÑ\s]{3,25})(?=\s*Coordenadas|\s*Destino|\s*Teléfono|\s*Dirección|$)",
-        texto,
+        r"Origen[\s:]*([A-ZÁÉÍÓÚÑa-z\s]{3,30})", texto, re.IGNORECASE
     )
-
-    # 4. DESTINO: Captura la ciudad de llegada
     match_destino = re.search(
-        r"Destino:\s*([A-ZÁÉÍÓÚÑ\s]{3,25})(?=\s*Destinatario|\s*Observaciones|\s*Dirección|$)",
-        texto,
+        r"Destino[\s:]*([A-ZÁÉÍÓÚÑa-z\s]{3,30})", texto, re.IGNORECASE
     )
-
-    # 5. DESTINATARIO: Extrae la razón social o cliente
     match_destinatario = re.search(
-        r"Destinatario:\s*([A-Z0-9ÁÉÍÓÚÑ\s\.\-&]{3,40})(?=\s*Dirección|\s*Teléfono|\s*Destino|$)",
+        r"Destinatario[\s:]*([A-Z0-9ÁÉÍÓÚÑa-z\s\.\-&]{3,40})",
         texto,
+        re.IGNORECASE,
     )
 
-    datos["vehiculo"] = (
-        match_placa.group(1).strip() if match_placa else "NO ENCONTRADO"
-    )
-    datos["conductor"] = (
-        match_conductor.group(1).strip() if match_conductor else "NO ENCONTRADO"
-    )
-    datos["origen"] = (
-        match_origen.group(1).strip() if match_origen else "NO ENCONTRADO"
-    )
-    datos["destino"] = (
-        match_destino.group(1).strip() if match_destino else "NO ENCONTRADO"
-    )
-    datos["destinatario"] = (
-        match_destinatario.group(1).strip()
-        if match_destinatario
-        else "NO ENCONTRADO"
-    )
+    # Función limpiadora: toma solo la primera línea encontrada y remueve etiquetas basura
+    def limpiar(match):
+        if match:
+            val = match.group(1).split("\n")[0].strip()
+            val = re.sub(
+                r"(?i)(Coordenadas|Teléfono|Dirección|Observaciones|CANTIDAD|Latitud|Longitud|Manifiesto|Pedido).*",
+                "",
+                val,
+            ).strip()
+            return val if val else "NO ENCONTRADO"
+        return "NO ENCONTRADO"
+
+    datos["vehiculo"] = limpiar(match_placa)
+    datos["conductor"] = limpiar(match_conductor)
+    datos["origen"] = limpiar(match_origen)
+    datos["destino"] = limpiar(match_destino)
+    datos["destinatario"] = limpiar(match_destinatario)
 
     return datos
 
