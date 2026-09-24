@@ -134,19 +134,63 @@ def extraer_texto_pdf(ruta_archivo):
 
 def extraer_datos_remesa(texto):
     datos = {}
-    
-    match_vehiculo = re.search(r"Vehículo:\s*([A-Z0-9]+)", texto)
-    match_conductor = re.search(r"Conductor:\s*([0-9]+\s+[A-Z\s]+)", texto)
-    match_origen = re.search(r"Origen:\s*([A-ZÁÉÍÓÚÑ\s]+)", texto)
-    match_destino = re.search(r"Destino:\s*([A-ZÁÉÍÓÚÑ\s]+)", texto)
-    match_destinatario = re.search(r"Destinatario:\s*([A-ZÁÉÍÓÚÑ\s]+)", texto)
-    
-    datos['vehiculo'] = match_vehiculo.group(1).strip() if match_vehiculo else "No encontrado"
-    datos['conductor'] = match_conductor.group(1).strip() if match_conductor else "No encontrado"
-    datos['origen'] = match_origen.group(1).strip() if match_origen else "No encontrado"
-    datos['destino'] = match_destino.group(1).strip() if match_destino else "No encontrado"
-    datos['destinatario'] = match_destinatario.group(1).strip() if match_destinatario else "No encontrado"
-    
+
+    # Normalización del texto para evitar saltos de línea molestos
+    texto_limpio = " ".join(texto.split())
+
+    # 1. PLACA: Busca específicamente el patrón de placa colombiana (ej. AAA123 o AAA12A)
+    match_placa = re.search(
+        r"(?:Vehículo|Placa)[\s:]*([A-Z]{3}\d{2}[A-Z0-9])",
+        texto,
+        re.IGNORECASE,
+    )
+    if not match_placa:
+        match_placa = re.search(
+            r"\b([A-Z]{3}\d{3}|[A-Z]{3}\d{2}[A-Z0-9])\b", texto
+        )
+
+    # 2. CONDUCTOR: Filtra números iniciales (cédula) y extrae el nombre completo
+    match_conductor = re.search(
+        r"Conductor:\s*(?:\d*\s*)?([A-ZÁÉÍÓÚÑ\s]{4,35})(?=\s*C\.?C|\s*Tel|\s*Placa|\s*CANTIDAD|\s*Vehículo|$)",
+        texto,
+    )
+
+    # 3. ORIGEN: Captura nombres de ciudades completos (mínimo 3 caracteres)
+    match_origen = re.search(
+        r"Origen:\s*([A-ZÁÉÍÓÚÑ\s]{3,25})(?=\s*Coordenadas|\s*Destino|\s*Teléfono|\s*Dirección|$)",
+        texto,
+    )
+
+    # 4. DESTINO: Captura la ciudad de llegada
+    match_destino = re.search(
+        r"Destino:\s*([A-ZÁÉÍÓÚÑ\s]{3,25})(?=\s*Destinatario|\s*Observaciones|\s*Dirección|$)",
+        texto,
+    )
+
+    # 5. DESTINATARIO: Extrae la razón social o cliente
+    match_destinatario = re.search(
+        r"Destinatario:\s*([A-Z0-9ÁÉÍÓÚÑ\s\.\-&]{3,40})(?=\s*Dirección|\s*Teléfono|\s*Destino|$)",
+        texto,
+    )
+
+    datos["vehiculo"] = (
+        match_placa.group(1).strip() if match_placa else "NO ENCONTRADO"
+    )
+    datos["conductor"] = (
+        match_conductor.group(1).strip() if match_conductor else "NO ENCONTRADO"
+    )
+    datos["origen"] = (
+        match_origen.group(1).strip() if match_origen else "NO ENCONTRADO"
+    )
+    datos["destino"] = (
+        match_destino.group(1).strip() if match_destino else "NO ENCONTRADO"
+    )
+    datos["destinatario"] = (
+        match_destinatario.group(1).strip()
+        if match_destinatario
+        else "NO ENCONTRADO"
+    )
+
     return datos
 
 if __name__ == '__main__':
