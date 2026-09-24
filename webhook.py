@@ -135,55 +135,86 @@ def extraer_texto_pdf(ruta_archivo):
 def extraer_datos_remesa(texto):
     datos = {}
 
-    # Imprime en los logs de Render para depurar si algo falla
-    print("--- TEXTO BRUTO DEL PDF ---")
-    print(texto)
-    print("---------------------------")
-
-    # Búsquedas permisivas
+    # 1. PLACA: Exige OBLIGATORIAMENTE 3 letras al inicio (ej. KUF879, KUF-879, KUF 879)
     match_placa = re.search(
-        r"(?:Veh[íi]culo|Placa)[\s:]*([A-Za-z0-9-]{6,7})", texto, re.IGNORECASE
-    )
-    if not match_placa:
-        match_placa = re.search(
-            r"\b([A-Za-z]{3}\s*-?\d{3}|[A-Za-z]{3}\s*-?\d{2}[A-Za-z0-9])\b",
-            texto,
-        )
-
-    match_conductor = re.search(
-        r"Conductor[\s:]*(?:\d+)?\s*([A-ZÁÉÍÓÚÑa-z\s]{4,35})",
+        r"\b([A-Z]{3}\s*[-]?\s*\d{3}|[A-Z]{3}\s*[-]?\s*\d{2}[A-Z0-9])\b",
         texto,
         re.IGNORECASE,
     )
+
+    # 2. CONDUCTOR: Busca el campo e ignora la cédula si está antes del nombre
+    match_conductor = re.search(
+        r"Conductor[\s:]*(?:\d[\d\.\s]*)?([A-ZÁÉÍÓÚÑa-z\s]{4,35})",
+        texto,
+        re.IGNORECASE,
+    )
+
+    # 3. ORIGEN
     match_origen = re.search(
         r"Origen[\s:]*([A-ZÁÉÍÓÚÑa-z\s]{3,30})", texto, re.IGNORECASE
     )
+
+    # 4. DESTINO
     match_destino = re.search(
         r"Destino[\s:]*([A-ZÁÉÍÓÚÑa-z\s]{3,30})", texto, re.IGNORECASE
     )
+
+    # 5. DESTINATARIO
     match_destinatario = re.search(
-        r"Destinatario[\s:]*([A-Z0-9ÁÉÍÓÚÑa-z\s\.\-&]{3,40})",
+        r"Destinatario[\s:]*([A-Z0-9ÁÉÍÓÚÑa-z\s\.\-&]{3,50})",
         texto,
         re.IGNORECASE,
     )
 
-    # Función limpiadora: toma solo la primera línea encontrada y remueve etiquetas basura
-    def limpiar(match):
-        if match:
-            val = match.group(1).split("\n")[0].strip()
-            val = re.sub(
-                r"(?i)(Coordenadas|Teléfono|Dirección|Observaciones|CANTIDAD|Latitud|Longitud|Manifiesto|Pedido).*",
-                "",
-                val,
-            ).strip()
-            return val if val else "NO ENCONTRADO"
-        return "NO ENCONTRADO"
+    # Limpiador inteligente para cortar etiquetas de casillas vecinas
+    def limpiar_campo(match, es_placa=False):
+        if not match:
+            return "NO ENCONTRADO"
 
-    datos["vehiculo"] = limpiar(match_placa)
-    datos["conductor"] = limpiar(match_conductor)
-    datos["origen"] = limpiar(match_origen)
-    datos["destino"] = limpiar(match_destino)
-    datos["destinatario"] = limpiar(match_destinatario)
+        if es_placa:
+            return match.group(0).upper().replace(" ", "").replace("-", "")
+
+        valor = match.group(1).split("\n")[0].strip()
+
+        # Palabras de parada para que no se traslape con otras casillas
+        palabras_parada = [
+            "Coordenadas",
+            "Latitud",
+            "Longitud",
+            "Dirección",
+            "Direccion",
+            "Teléfono",
+            "Telefono",
+            "Observaciones",
+            "Manifiesto",
+            "Pedido",
+            "Fecha",
+            "Remitente",
+            "Cliente",
+            "Agencia",
+            "C.C",
+            "CC",
+            "Placa",
+            "Vehículo",
+            "Vehiculo",
+            "CANTIDAD",
+            "Marca",
+            "Serial",
+        ]
+
+        for palabra in palabras_parada:
+            pos = valor.find(palabra)
+            if pos != -1:
+                valor = valor[:pos]
+
+        valor = valor.strip()
+        return valor if len(valor) > 1 else "NO ENCONTRADO"
+
+    datos["vehiculo"] = limpiar_campo(match_placa, es_placa=True)
+    datos["conductor"] = limpiar_campo(match_conductor)
+    datos["origen"] = limpiar_campo(match_origen)
+    datos["destino"] = limpiar_campo(match_destino)
+    datos["destinatario"] = limpiar_campo(match_destinatario)
 
     return datos
 
