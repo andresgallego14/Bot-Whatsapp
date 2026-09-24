@@ -1,6 +1,7 @@
 import os
 import requests
 from flask import Flask, request, jsonify
+from pypdf import PdfReader
 
 app = Flask(__name__)
 
@@ -110,6 +111,19 @@ def enviar_respuesta(to_number, text_response):
     }
     response = requests.post(url, json=payload, headers=headers)
     print("Respuesta enviada a Meta:", response.json())
+
+def extraer_texto_pdf(ruta_archivo):
+    try:
+        lector = PdfReader(ruta_archivo)
+        texto_completo = ""
+        for pagina in lector.pages:
+            texto_extraido = pagina.extract_text()
+            if texto_extraido:
+                texto_completo += texto_extraido + "\n"
+        return texto_completo
+    except Exception as e:
+        print(f"Error leyendo el PDF: {e}")
+        return None
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 10000))
