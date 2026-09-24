@@ -131,90 +131,118 @@ def extraer_texto_pdf(ruta_archivo):
     except Exception as e:
         print(f"Error leyendo el PDF: {e}")
         return None
-
 def extraer_datos_remesa(texto):
     datos = {}
 
-    # 1. PLACA: Exige OBLIGATORIAMENTE 3 letras al inicio (ej. KUF879, KUF-879, KUF 879)
+    # 1. PLACA: Búsqueda estricta de 3 letras + 3 dígitos (ej. KUF879 o KUF-879)
     match_placa = re.search(
-        r"\b([A-Z]{3}\s*[-]?\s*\d{3}|[A-Z]{3}\s*[-]?\s*\d{2}[A-Z0-9])\b",
-        texto,
-        re.IGNORECASE,
+        r"\b([A-Z]{3}\s*[-]?\s*\d{3}|[A-Z]{3}\s*[-]?\s*\d{2}[A-Z0-9])\b", texto
     )
+    if match_placa:
+        datos["vehiculo"] = (
+            match_placa.group(0).upper().replace(" ", "").replace("-", "")
+        )
+    else:
+        match_v = re.search(
+            r"(?:Veh[íi]culo|Placa)[\s:]*([A-Za-z0-9\s-]+)",
+            texto,
+            re.IGNORECASE,
+        )
+        if match_v:
+            val = match_v.group(1).split()[0].strip().upper()
+            datos["vehiculo"] = val if len(val) >= 5 else "NO ENCONTRADO"
+        else:
+            datos["vehiculo"] = "NO ENCONTRADO"
 
-    # 2. CONDUCTOR: Busca el campo e ignora la cédula si está antes del nombre
-    match_conductor = re.search(
-        r"Conductor[\s:]*(?:\d[\d\.\s]*)?([A-ZÁÉÍÓÚÑa-z\s]{4,35})",
-        texto,
-        re.IGNORECASE,
-    )
+    # Función extractora con soporte para saltos de línea y corte por casilla vecina
+    def capturar_valor(clave, palabras_fin):
+        # Primero busca en la misma línea
+        pattern = rf"{clave}[\s:]+([^\n\r]+)"
+        match = re.search(pattern, texto, re.IGNORECASE)
 
-    # 3. ORIGEN
-    match_origen = re.search(
-        r"Origen[\s:]*([A-ZÁÉÍÓÚÑa-z\s]{3,30})", texto, re.IGNORECASE
-    )
-
-    # 4. DESTINO
-    match_destino = re.search(
-        r"Destino[\s:]*([A-ZÁÉÍÓÚÑa-z\s]{3,30})", texto, re.IGNORECASE
-    )
-
-    # 5. DESTINATARIO
-    match_destinatario = re.search(
-        r"Destinatario[\s:]*([A-Z0-9ÁÉÍÓÚÑa-z\s\.\-&]{3,50})",
-        texto,
-        re.IGNORECASE,
-    )
-
-    # Limpiador inteligente para cortar etiquetas de casillas vecinas
-    def limpiar_campo(match, es_placa=False):
+        # Si no encuentra nada en la misma línea, busca en la línea siguiente
         if not match:
-            return "NO ENCONTRADO"
+            pattern_multiline = rf"{clave}[\s:]*[\r\n]+\s*([^\n\r]+)"
+            match = re.search(pattern_multiline, texto, re.IGNORECASE)
+            if not match:
+                return "NO ENCONTRADO"
 
-        if es_placa:
-            return match.group(0).upper().replace(" ", "").replace("-", "")
+        valor = match.group(1).strip()
 
-        valor = match.group(1).split("\n")[0].strip()
+        # Corta el texto si se topa con la etiqueta de la casilla de al lado
+        for fin in palabras_fin:
+            pos = re.search(rf"\b{fin}\b", valor, re.IGNORECASE)
+            if pos:
+                valor = valor[: pos.start()].strip()
 
-        # Palabras de parada para que no se traslape con otras casillas
-        palabras_parada = [
-            "Coordenadas",
-            "Latitud",
-            "Longitud",
-            "Dirección",
-            "Direccion",
-            "Teléfono",
-            "Telefono",
-            "Observaciones",
-            "Manifiesto",
-            "Pedido",
-            "Fecha",
-            "Remitente",
-            "Cliente",
-            "Agencia",
+        valor = re.sub(r"[\:\,\.\-]+\s*$", "", valor).strip()
+        return valor if len(valor) >= 2 else "NO ENCONTRADO"
+
+    # 2. CONDUCTOR (elimina cédula si aparece antes del nombre)
+    conductor_raw = capturar_valor(
+        "Conductor",
+        [
             "C.C",
             "CC",
+            "Teléfono",
+            "Telefono",
+            "Tel",
             "Placa",
             "Vehículo",
             "Vehiculo",
             "CANTIDAD",
             "Marca",
             "Serial",
-        ]
+            "Origen",
+        ],
+    )
+    conductor_raw = re.sub(r"^\d+[\s\.-]*", "", conductor_raw).strip()
+    datos["conductor"] = conductor_raw if conductor_raw else "NO ENCONTRADO"
 
-        for palabra in palabras_parada:
-            pos = valor.find(palabra)
-            if pos != -1:
-                valor = valor[:pos]
+    # 3. ORIGEN
+    datos["origen"] = capturar_valor(
+        "Origen",
+        [
+            "Coordenadas",
+            "Latitud",
+            "Longitud",
+            "Destino",
+            "Teléfono",
+            "Telefono",
+            "Dirección",
+            "Direccion",
+            "Remitente",
+        ],
+    )
 
-        valor = valor.strip()
-        return valor if len(valor) > 1 else "NO ENCONTRADO"
+    # 4. DESTINO
+    datos["destino"] = capturar_valor(
+        "Destino",
+        [
+            "Destinatario",
+            "Observaciones",
+            "Dirección",
+            "Direccion",
+            "Manifiesto",
+            "Pedido",
+            "Fecha",
+        ],
+    )
 
-    datos["vehiculo"] = limpiar_campo(match_placa, es_placa=True)
-    datos["conductor"] = limpiar_campo(match_conductor)
-    datos["origen"] = limpiar_campo(match_origen)
-    datos["destino"] = limpiar_campo(match_destino)
-    datos["destinatario"] = limpiar_campo(match_destinatario)
+    # 5. DESTINATARIO
+    datos["destinatario"] = capturar_valor(
+        "Destinatario",
+        [
+            "Dirección",
+            "Direccion",
+            "Teléfono",
+            "Telefono",
+            "Destino",
+            "Ciudad",
+            "NIT",
+            "Cc",
+        ],
+    )
 
     return datos
 
